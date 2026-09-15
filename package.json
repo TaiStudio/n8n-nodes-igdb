@@ -1,0 +1,25 @@
+{
+  "name": "n8n-nodes-igdb",
+  "version": "26.9.1",
+  "private": true,
+  "description": "n8n node for IGDB integration",
+  "keywords": [
+    "n8n",
+    "igdb"
+  ],
+  "homepage": "https://github.com/TaiStudio/n8n-nodes-igdb#readme",
+  "bugs": {
+    "url": "https://github.com/TaiStudio/n8n-nodes-igdb/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TaiStudio/n8n-nodes-igdb.git"
+  },
+  "license": "MIT",
+  "author": "Tai Studio",
+  "type": "commonjs",
+  "main": "igdb.node.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  }
+}
