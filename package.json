@@ -1,25 +1,57 @@
 {
-  "name": "n8n-nodes-igdb",
+  "name": "@taistudio/n8n-nodes-igdb",
   "version": "26.9.1",
-  "private": true,
   "description": "n8n node for IGDB integration",
+  "license": "MIT",
+  "homepage": "https://github.com/TaiStudio/n8n-nodes-igdb#readme",
   "keywords": [
     "n8n",
     "igdb"
   ],
-  "homepage": "https://github.com/TaiStudio/n8n-nodes-igdb#readme",
-  "bugs": {
-    "url": "https://github.com/TaiStudio/n8n-nodes-igdb/issues"
+  "author": {
+    "name": "Tai Studio",
+    "email": "tai.studio@outlook.fr"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/TaiStudio/n8n-nodes-igdb.git"
   },
-  "license": "MIT",
-  "author": "Tai Studio",
-  "type": "commonjs",
-  "main": "igdb.node.js",
+  "bugs": {
+    "url": "https://github.com/TaiStudio/n8n-nodes-igdb/issues"
+  },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "n8n-node build",
+    "build:watch": "tsc --watch",
+    "dev": "n8n-node dev",
+    "lint": "n8n-node lint",
+    "lint:fix": "n8n-node lint --fix",
+    "release": "n8n-node release",
+    "prepublishOnly": "n8n-node prerelease"
+  },
+  "files": [
+    "dist"
+  ],
+  "n8n": {
+    "n8nNodesApiVersion": 1,
+    "strict": true,
+    "credentials": [
+      "dist/credentials/GithubIssuesApi.credentials.js",
+      "dist/credentials/GithubIssuesOAuth2Api.credentials.js"
+    ],
+    "nodes": [
+      "dist/nodes/GithubIssues/GithubIssues.node.js",
+      "dist/nodes/Example/Example.node.js"
+    ]
+  },
+  "devDependencies": {
+    "@n8n/node-cli": "*",
+    "@types/node": "^22.20.3",
+    "eslint": "9.39.4",
+    "prettier": "3.8.3",
+    "release-it": "20.2.0",
+    "typescript": "5.9.3"
+  },
+  "peerDependencies": {
+    "n8n-workflow": "*"
   }
 }

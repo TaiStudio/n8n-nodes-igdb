@@ -1,0 +1,54 @@
+{
+  "node": "n8n-nodes-igdb",
+  "version": 1,
+  "name": "igdbSearch",
+  "icon": "file:../../../../icons/igdb.svg",
+  "group": ["input"],
+  "description": "Search IGDB for games by ID or name",
+  "categories": ["Development", "Game Dev"],
+  "keywords": ["igdb", "games"],
+  "documentation": "https://igdb.com/",
+  "title": "IGDB Search",
+  "options": {
+    "operation": {
+      "type": "options",
+      "options": [
+        { "name": "Search by ID", "value": "searchById" },
+        { "name": "Search by Name", "value": "searchByName" }
+      ],
+      "default": "searchByName"
+    },
+    "id": {
+      "type": "number",
+      "default": 0,
+      "description": "Game ID to search for (used with \"Search by ID\" operation)"
+    },
+    "name": {
+      "type": "string",
+      "default": "",
+      "description": "Game name to search for (used with \"Search by Name\" operation)"
+    }
+  },
+  "properties": {
+    "operation": {
+      "type": "options",
+      "noDataExpression": true,
+      "displayName": "Operation"
+    },
+    "id": {
+      "type": "number",
+      "displayName": "ID"
+    },
+    "name": {
+      "type": "string",
+      "displayName": "Name"
+    }
+  },
+  "input": "main",
+  "output": "main",
+  "credentials": ["IGDBCredential"],
+  "codex": {
+    "resources": [],
+    "primaryDocumentation": []
+  }
+}
