@@ -1,5 +1,10 @@
-import { NodeConnectionTypes, type INodeType, type INodeTypeDescription, type IExecuteFunctions } from 'n8n-workflow'
-import { IGDBApiCredential } from '../../credentials/IGDBApi.credentials'
+import {
+    INodeType,
+    INodeTypeDescription,
+    IExecuteFunctions,
+    NodeConnectionTypes
+} from 'n8n-workflow'
+import { IGDBApi } from '../../credentials/IGDBApi.credentials'
 
 export class IgdbSearch implements INodeType {
 	description: INodeTypeDescription = {
@@ -18,12 +23,12 @@ export class IgdbSearch implements INodeType {
 		outputs: [NodeConnectionTypes.Main],
 		credentials: [
 			{
-				name: 'IGDBApiCredential',
+				name: 'igdbApi',
 				required: true,
 			},
 		],
-		properties: [
-			{
+		properties: {
+			operation: {
 				displayName: 'Operation',
 				name: 'operation',
 				type: 'options',
@@ -34,36 +39,58 @@ export class IgdbSearch implements INodeType {
 				],
 				default: 'searchByName',
 			},
-			{
+			id: {
 				displayName: 'ID',
 				name: 'id',
 				type: 'number',
 				description: 'Game ID to search for (used with "Search by ID" operation)',
 				default: 0,
 			},
-			{
+			name: {
 				displayName: 'Name',
 				name: 'name',
 				type: 'string',
 				description: 'Game name to search for (used with "Search by Name" operation)',
 				default: '',
 			},
-		],
+		},
 	}
 
-	execute(this: IExecuteFunctions, pairedItem: { item: number }): NodeOutput[] {
-		const credentials = this.getCredentials('IGDBApiCredential') as IGDBApiCredential[]
-		if (!credentials || credentials.length === 0) {
-			throw new NodeOperationError('IGDB credential not found')
+	execute(this: IExecuteFunctions) {
+		const credentials = this.getCredentials('igdbApi') as IGDBApi
+		const clientId = credentials.clientId
+
+		// Exchange client credentials for access token
+		const tokenResponse = await fetch('https://id.twitch.tv/oauth2/token', {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/x-www-form-urlencoded',
+			},
+			body: new URLSearchParams({
+				client_id: clientId,
+				client_secret: credentials.clientSecret,
+				grant_type: 'client_credentials',
+			}),
+		})
+
+		const tokenData = (await tokenResponse.json()) as { access_token: string }
+		if (!tokenResponse.ok) {
+			throw new NodeOperationError(
+				tokenData.message || 'Failed to obtain access token'
+			)
 		}
 
-		const clientId = credentials[0].clientId
+		const accessToken = tokenData.access_token
 
-		const accessToken = await credentials[0].getAccessToken()
+		let body
 
-		const body = {
-			search: $parameter('name') as string,
-			fields: '*',
+		if ($parameter('operation') === 'searchById') {
+			body = {}
+		} else {
+			body = {
+				search: $parameter('name') as string,
+				fields: '*',
+			}
 		}
 
 		const response = await fetch('https://api.igdb.com/v4/games', {
@@ -76,7 +103,12 @@ export class IgdbSearch implements INodeType {
 			body: JSON.stringify(body),
 		})
 
-		const data = (await response.json()) as IGDBGame[]
+		const data = (await response.json()) as Array<{
+			id: number
+			name: string
+			cover: { id: number } | null
+			screens: Array<{ image_id: number }> | null
+		}>
 
 		if (!response.ok) {
 			throw new NodeOperationError(
@@ -85,44 +117,32 @@ export class IgdbSearch implements INodeType {
 		}
 
 		// Transform results to include cover, id, name, screens with real links, and all info
-		const transformed = data.map((game: IGDBGame): IGDBGameOutput => ({
+interface IGDBGame {
+		id: number
+		name: string
+		cover: { id: number } | null
+		screens: Array<{ image_id: number }> | null
+		[key: string]: unknown
+	}
+
+	interface IGDBScreen {
+		image_id: number
+	}
+
+	const transformed = data.map((game: IGDBGame) => ({
 			id: game.id,
 			name: game.name,
 			cover: game.cover
 				? `https://images.igdb.com/cover/${game.cover.id}-FULL.jpg`
 				: null,
 			screens: game.screens
-				? game.screens
-						.map((screen: IGDBScreen) => `https://images.igdb.com/screen/${screen.image_id}-FULL.jpg`)
-						.filter((link: string) => link.includes('http'))
-				: [],
+					? game.screens
+							.map((screen: IGDBScreen) => `https://images.igdb.com/screen/${screen.image_id}-FULL.jpg`)
+							.filter((link: string) => link.includes('http'))
+					: [],
 			...game,
 		}))
 
-		return [{ json: transformed, pairedItem: { item: pairedItem.item } }]
-	}
+		return [{ json: transformed, pairedItem: { item: 0 } }]
 }
-
-interface IGDBGame {
-	id: number
-	name: string
-	cover: { id: number } | null
-	screens: Array<{ image_id: number }> | null
-	[key: string]: unknown
-}
-
-interface IGDBScreen {
-	image_id: number
-}
-
-interface IGDBGameOutput {
-	id: number
-	name: string
-	cover: string | null
-	screens: string[]
-	[key: string]: unknown
-}
-
-interface NodeOutput {
-	json: IGDBGameOutput[]
 }

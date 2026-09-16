@@ -1,32 +1,44 @@
-// @ts-expect-error: n8n-workflow types may not be fully available at compile time
-import { ICredential } from 'n8n-workflow'
+import { Icon, ICredentialType, INodeProperties } from 'n8n-workflow'
 
-export class IGDBApiCredential implements ICredential {
-  clientId: string
-  clientSecret: string
-
-  constructor(clientId: string, clientSecret: string) {
-    this.clientId = clientId
-    this.clientSecret = clientSecret
-  }
-
-  async getAccessToken(): Promise<string> {
-    const response = await fetch('https://id.twitch.tv/oauth2/token', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: new URLSearchParams({
-        client_id: this.clientId,
-        client_secret: this.clientSecret,
-        grant_type: 'client_credentials',
-      }),
-    })
-
-    const data = (await response.json()) as { access_token: string; message?: string; error?: string }
-    if (!response.ok || data.message) {
-      throw new Error(data.message || data.error || 'Unknown error')
+export class IGDBApi implements ICredentialType {
+    name = 'igdbApi'
+    displayName = 'IGDB API'
+    documentationUrl = 'https://docs.igdb.com/'
+    icon: Icon = "file:../icons/igdb.svg"
+	
+    test = {
+        request: {
+            baseURL: 'https://api.igdb.com/v4',
+            url: '/games',
+            method: 'POST',
+            body: JSON.stringify({}),
+            headers: {
+                'Client-ID': '={{$credentials?.clientId}}',
+                Authorization: 'Bearer {{token}}',
+                'Content-Type': 'application/json',
+            },
+        },
     }
-    return data.access_token
-  }
+
+    properties: INodeProperties[] = [
+        {
+            displayName: 'Client ID',
+            name: 'clientId',
+            type: 'string',
+            default: '',
+            required: true,
+            description: 'Your IGDB Client ID from https://igdb.com/',
+        },
+        {
+            displayName: 'Client Secret',
+            name: 'clientSecret',
+            type: 'string',
+            typeOptions: {
+                password: true,
+            },
+            default: '',
+            required: true,
+            description: 'Your IGDB Client Secret from https://igdb.com/',
+        },
+    ]
 }
