@@ -1,4 +1,4 @@
-// @ts-ignore
+// @ts-expect-error: n8n-workflow types may not be fully available at compile time
 import { ICredential } from 'n8n-workflow'
 
 export class IGDBCredential implements ICredential {
