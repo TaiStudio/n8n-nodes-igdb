@@ -19,7 +19,18 @@ interface IGDBCover {
 
 interface IGDBScreen {
 	id?: number;
-	image_id: string;
+	image_id?: string;
+}
+
+interface IGDBArtwork {
+	id?: number;
+	image_id?: string;
+}
+
+interface IGDBVideo {
+	id?: number;
+	name?: string;
+	video_id?: string;
 }
 
 interface IGDBGame {
@@ -28,6 +39,8 @@ interface IGDBGame {
 	cover?: IGDBCover | number | null;
 	screenshots?: IGDBScreen[] | null;
 	screens?: IGDBScreen[] | null;
+	artworks?: IGDBArtwork[] | null;
+	videos?: IGDBVideo[] | null;
 	[key: string]: unknown;
 }
 
@@ -148,7 +161,8 @@ export class IgdbSearch implements INodeType {
 
 				// IGDB v4 expects a plain-text query (Apicalypse), NOT JSON.
 				// e.g. `search "Zelda"; fields *,cover.image_id,screenshots.image_id; limit 10;`
-				const fields = '*,cover.image_id,screenshots.image_id';
+				const fields =
+					'*,cover.image_id,screenshots.image_id,artworks.image_id,videos.name,videos.video_id';
 				let query: string;
 
 				if (operation === 'searchById') {
@@ -181,9 +195,36 @@ export class IgdbSearch implements INodeType {
 
 				const games = data as IGDBGame[];
 
-				// Transform results to include cover, id, name, screens with real links, and all info
+				// Transform results to include real URLs for cover, screenshots, artworks, videos
+				const toImageUrl = (imageId: string | undefined, size: string): string | null =>
+					imageId ? `https://images.igdb.com/igdb/image/upload/t_${size}/${imageId}.jpg` : null;
+
+				const toImageUrlList = (
+					items: unknown,
+					size: string,
+				): string[] => {
+					if (!Array.isArray(items)) return [];
+					return (items as Array<{ image_id?: string }>)
+						.map((item) => toImageUrl(item?.image_id, size))
+						.filter((link): link is string => link != null);
+				};
+
+				const toVideoUrlList = (items: unknown): string[] => {
+					if (!Array.isArray(items)) return [];
+					return (items as Array<{ video_id?: string }>)
+						.map((item) =>
+							item?.video_id ? `https://www.youtube.com/watch?v=${item.video_id}` : null,
+						)
+						.filter((link): link is string => link != null);
+				};
+
 				const transformed = games.map((game) => {
-					const screenshots = game.screenshots ?? game.screens ?? [];
+					const screenshotUrls = toImageUrlList(
+						game.screenshots ?? game.screens ?? [],
+						'screenshot_big',
+					);
+					const artworkUrls = toImageUrlList(game.artworks ?? [], '1080p');
+					const videoUrls = toVideoUrlList(game.videos ?? []);
 					const coverObject =
 						game.cover != null && typeof game.cover === 'object'
 							? (game.cover as IGDBCover)
@@ -192,19 +233,12 @@ export class IgdbSearch implements INodeType {
 						...game,
 						id: game.id,
 						name: game.name,
-						cover: coverObject?.image_id
-							? `https://images.igdb.com/igdb/image/upload/t_cover_big/${coverObject.image_id}.jpg`
-							: null,
-						screens: Array.isArray(screenshots)
-							? screenshots
-									.map(
-										(screen: IGDBScreen) =>
-											screen?.image_id
-												? `https://images.igdb.com/igdb/image/upload/t_screenshot_big/${screen.image_id}.jpg`
-												: null,
-									)
-									.filter((link): link is string => link != null)
-							: [],
+						cover: toImageUrl(coverObject?.image_id, 'cover_big'),
+						screenshots: screenshotUrls,
+						// backward-compat alias
+						screens: screenshotUrls,
+						artworks: artworkUrls,
+						videos: videoUrls,
 					};
 				});
 
