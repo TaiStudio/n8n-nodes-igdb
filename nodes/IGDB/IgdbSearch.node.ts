@@ -1,10 +1,45 @@
-import {
-    INodeType,
-    INodeTypeDescription,
-    IExecuteFunctions,
-    NodeConnectionTypes
-} from 'n8n-workflow'
-import { IGDBApi } from '../../credentials/IGDBApi.credentials'
+import type {
+	IDataObject,
+	IExecuteFunctions,
+	INodeExecutionData,
+	INodeType,
+	INodeTypeDescription,
+} from 'n8n-workflow';
+import { NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
+
+interface IGDBCredentials {
+	clientId: string;
+	clientSecret: string;
+}
+
+interface IGDBScreen {
+	image_id: string;
+}
+
+interface IGDBGame {
+	id: number;
+	name: string;
+	cover?: { id: number } | null;
+	screenshots?: IGDBScreen[] | null;
+	screens?: IGDBScreen[] | null;
+	[key: string]: unknown;
+}
+
+interface TwitchTokenSuccess {
+	access_token: string;
+	expires_in: number;
+	token_type: string;
+}
+
+interface TwitchTokenError {
+	message?: string;
+	error?: string;
+}
+
+interface IGDBErrorResponse {
+	message?: string;
+	error?: string;
+}
 
 export class IgdbSearch implements INodeType {
 	description: INodeTypeDescription = {
@@ -13,7 +48,7 @@ export class IgdbSearch implements INodeType {
 		icon: { light: 'file:../../icons/igdb.svg', dark: 'file:../../icons/igdb.dark.svg' },
 		group: ['input'],
 		version: 1,
-		subtitle: '={{$parameter["operation"] + ": " + $parameter["nameOrId"]}}',
+		subtitle: '={{$parameter["operation"]}}',
 		description: 'Search IGDB for games by ID or name',
 		defaults: {
 			name: 'IGDB Search',
@@ -27,8 +62,8 @@ export class IgdbSearch implements INodeType {
 				required: true,
 			},
 		],
-		properties: {
-			operation: {
+		properties: [
+			{
 				displayName: 'Operation',
 				name: 'operation',
 				type: 'options',
@@ -39,110 +74,151 @@ export class IgdbSearch implements INodeType {
 				],
 				default: 'searchByName',
 			},
-			id: {
+			{
 				displayName: 'ID',
 				name: 'id',
 				type: 'number',
 				description: 'Game ID to search for (used with "Search by ID" operation)',
 				default: 0,
+				displayOptions: {
+					show: {
+						operation: ['searchById'],
+					},
+				},
 			},
-			name: {
+			{
 				displayName: 'Name',
 				name: 'name',
 				type: 'string',
 				description: 'Game name to search for (used with "Search by Name" operation)',
 				default: '',
+				displayOptions: {
+					show: {
+						operation: ['searchByName'],
+					},
+				},
 			},
-		},
-	}
+		],
+	};
 
-	execute(this: IExecuteFunctions) {
-		const credentials = this.getCredentials('igdbApi') as IGDBApi
-		const clientId = credentials.clientId
+	async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
+		const items = this.getInputData();
+		const returnData: INodeExecutionData[] = [];
 
-		// Exchange client credentials for access token
-		const tokenResponse = await fetch('https://id.twitch.tv/oauth2/token', {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/x-www-form-urlencoded',
-			},
-			body: new URLSearchParams({
-				client_id: clientId,
-				client_secret: credentials.clientSecret,
-				grant_type: 'client_credentials',
-			}),
-		})
+		for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
+			try {
+				const credentials = (await this.getCredentials('igdbApi')) as unknown as IGDBCredentials;
+				const clientId = credentials.clientId;
+				const clientSecret = credentials.clientSecret;
 
-		const tokenData = (await tokenResponse.json()) as { access_token: string }
-		if (!tokenResponse.ok) {
-			throw new NodeOperationError(
-				tokenData.message || 'Failed to obtain access token'
-			)
-		}
+				// Exchange client credentials for access token
+				const tokenResponse = await fetch('https://id.twitch.tv/oauth2/token', {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/x-www-form-urlencoded',
+					},
+					body: new URLSearchParams({
+						client_id: clientId,
+						client_secret: clientSecret,
+						grant_type: 'client_credentials',
+					}),
+				});
 
-		const accessToken = tokenData.access_token
+				const tokenData = (await tokenResponse.json()) as
+					| TwitchTokenSuccess
+					| TwitchTokenError;
 
-		let body
+				if (!tokenResponse.ok) {
+					const message =
+						(tokenData as TwitchTokenError).message ??
+						(tokenData as TwitchTokenError).error ??
+						'Failed to obtain access token';
+					throw new NodeOperationError(this.getNode(), message, { itemIndex });
+				}
 
-		if ($parameter('operation') === 'searchById') {
-			body = {}
-		} else {
-			body = {
-				search: $parameter('name') as string,
-				fields: '*',
+				const accessToken = (tokenData as TwitchTokenSuccess).access_token;
+
+				const operation = this.getNodeParameter('operation', itemIndex) as string;
+
+				let body: Record<string, unknown>;
+
+				if (operation === 'searchById') {
+					const gameId = this.getNodeParameter('id', itemIndex) as number;
+					body = {
+						where: `id = ${gameId}`,
+						fields: '*',
+					};
+				} else {
+					const gameName = this.getNodeParameter('name', itemIndex) as string;
+					body = {
+						search: gameName,
+						fields: '*',
+					};
+				}
+
+				const response = await fetch('https://api.igdb.com/v4/games', {
+					method: 'POST',
+					headers: {
+						'Client-ID': clientId,
+						Authorization: `Bearer ${accessToken}`,
+						'Content-Type': 'application/json',
+					},
+					body: JSON.stringify(body),
+				});
+
+				const data = (await response.json()) as IGDBGame[] | IGDBErrorResponse;
+
+				if (!response.ok) {
+					const message = Array.isArray(data)
+						? 'Unknown error'
+						: (data.message ?? data.error ?? 'Unknown error');
+					throw new NodeOperationError(this.getNode(), message, { itemIndex });
+				}
+
+				const games = data as IGDBGame[];
+
+				// Transform results to include cover, id, name, screens with real links, and all info
+				const transformed = games.map((game) => {
+					const screens = game.screens ?? game.screenshots ?? [];
+					return {
+						...game,
+						id: game.id,
+						name: game.name,
+						cover: game.cover
+							? `https://images.igdb.com/igdb/image/upload/t_cover_big/${game.cover.id}.jpg`
+							: null,
+						screens: Array.isArray(screens)
+							? screens
+									.map(
+										(screen: IGDBScreen) =>
+											`https://images.igdb.com/igdb/image/upload/t_screenshot_big/${screen.image_id}.jpg`,
+									)
+									.filter((link: string) => link.includes('http'))
+							: [],
+					};
+				});
+
+				for (const game of transformed) {
+					returnData.push({
+						json: game as unknown as IDataObject,
+						pairedItem: { item: itemIndex },
+					});
+				}
+			} catch (error) {
+				if (this.continueOnFail()) {
+					returnData.push({
+						json: items[itemIndex].json,
+						error: new NodeOperationError(this.getNode(), error as Error, {
+							itemIndex,
+						}),
+						pairedItem: { item: itemIndex },
+					});
+					continue;
+				}
+				throw new NodeOperationError(this.getNode(), error as Error, { itemIndex });
 			}
 		}
 
-		const response = await fetch('https://api.igdb.com/v4/games', {
-			method: 'POST',
-			headers: {
-				'Client-ID': clientId,
-				Authorization: `Bearer ${accessToken}`,
-				'Content-Type': 'application/json',
-			},
-			body: JSON.stringify(body),
-		})
-
-		const data = (await response.json()) as Array<{
-			id: number
-			name: string
-			cover: { id: number } | null
-			screens: Array<{ image_id: number }> | null
-		}>
-
-		if (!response.ok) {
-			throw new NodeOperationError(
-				data.message || data.error || 'Unknown error'
-			)
-		}
-
-		// Transform results to include cover, id, name, screens with real links, and all info
-interface IGDBGame {
-		id: number
-		name: string
-		cover: { id: number } | null
-		screens: Array<{ image_id: number }> | null
-		[key: string]: unknown
+		return [returnData];
 	}
-
-	interface IGDBScreen {
-		image_id: number
-	}
-
-	const transformed = data.map((game: IGDBGame) => ({
-			id: game.id,
-			name: game.name,
-			cover: game.cover
-				? `https://images.igdb.com/cover/${game.cover.id}-FULL.jpg`
-				: null,
-			screens: game.screens
-					? game.screens
-							.map((screen: IGDBScreen) => `https://images.igdb.com/screen/${screen.image_id}-FULL.jpg`)
-							.filter((link: string) => link.includes('http'))
-					: [],
-			...game,
-		}))
-
-		return [{ json: transformed, pairedItem: { item: 0 } }]
-}
 }
