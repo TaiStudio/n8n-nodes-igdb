@@ -12,14 +12,20 @@ interface IGDBCredentials {
 	clientSecret: string;
 }
 
+interface IGDBCover {
+	id: number;
+	image_id?: string;
+}
+
 interface IGDBScreen {
+	id?: number;
 	image_id: string;
 }
 
 interface IGDBGame {
 	id: number;
 	name: string;
-	cover?: { id: number } | null;
+	cover?: IGDBCover | number | null;
 	screenshots?: IGDBScreen[] | null;
 	screens?: IGDBScreen[] | null;
 	[key: string]: unknown;
@@ -140,20 +146,18 @@ export class IgdbSearch implements INodeType {
 
 				const operation = this.getNodeParameter('operation', itemIndex) as string;
 
-				let body: Record<string, unknown>;
+				// IGDB v4 expects a plain-text query (Apicalypse), NOT JSON.
+				// e.g. `search "Zelda"; fields *,cover.image_id,screenshots.image_id; limit 10;`
+				const fields = '*,cover.image_id,screenshots.image_id';
+				let query: string;
 
 				if (operation === 'searchById') {
 					const gameId = this.getNodeParameter('id', itemIndex) as number;
-					body = {
-						where: `id = ${gameId}`,
-						fields: '*',
-					};
+					query = `where id = ${gameId}; fields ${fields};`;
 				} else {
 					const gameName = this.getNodeParameter('name', itemIndex) as string;
-					body = {
-						search: gameName,
-						fields: '*',
-					};
+					const escaped = gameName.replace(/"/g, '\\"');
+					query = `search "${escaped}"; fields ${fields}; limit 10;`;
 				}
 
 				const response = await fetch('https://api.igdb.com/v4/games', {
@@ -161,9 +165,9 @@ export class IgdbSearch implements INodeType {
 					headers: {
 						'Client-ID': clientId,
 						Authorization: `Bearer ${accessToken}`,
-						'Content-Type': 'application/json',
+						'Content-Type': 'text/plain',
 					},
-					body: JSON.stringify(body),
+					body: query,
 				});
 
 				const data = (await response.json()) as IGDBGame[] | IGDBErrorResponse;
@@ -179,21 +183,27 @@ export class IgdbSearch implements INodeType {
 
 				// Transform results to include cover, id, name, screens with real links, and all info
 				const transformed = games.map((game) => {
-					const screens = game.screens ?? game.screenshots ?? [];
+					const screenshots = game.screenshots ?? game.screens ?? [];
+					const coverObject =
+						game.cover != null && typeof game.cover === 'object'
+							? (game.cover as IGDBCover)
+							: null;
 					return {
 						...game,
 						id: game.id,
 						name: game.name,
-						cover: game.cover
-							? `https://images.igdb.com/igdb/image/upload/t_cover_big/${game.cover.id}.jpg`
+						cover: coverObject?.image_id
+							? `https://images.igdb.com/igdb/image/upload/t_cover_big/${coverObject.image_id}.jpg`
 							: null,
-						screens: Array.isArray(screens)
-							? screens
+						screens: Array.isArray(screenshots)
+							? screenshots
 									.map(
 										(screen: IGDBScreen) =>
-											`https://images.igdb.com/igdb/image/upload/t_screenshot_big/${screen.image_id}.jpg`,
+											screen?.image_id
+												? `https://images.igdb.com/igdb/image/upload/t_screenshot_big/${screen.image_id}.jpg`
+												: null,
 									)
-									.filter((link: string) => link.includes('http'))
+									.filter((link): link is string => link != null)
 							: [],
 					};
 				});
