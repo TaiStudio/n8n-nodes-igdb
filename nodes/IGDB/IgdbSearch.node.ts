@@ -1,5 +1,5 @@
 import { NodeConnectionTypes, type INodeType, type INodeTypeDescription, type IExecuteFunctions } from 'n8n-workflow'
-import { IGDBCredential } from '../../credentials/IGDBApi.credentials'
+import { IGDBApiCredential } from '../../credentials/IGDBApi.credentials'
 
 export class IgdbSearch implements INodeType {
 	description: INodeTypeDescription = {
@@ -18,7 +18,7 @@ export class IgdbSearch implements INodeType {
 		outputs: [NodeConnectionTypes.Main],
 		credentials: [
 			{
-				name: 'IGDBCredential',
+				name: 'IGDBApiCredential',
 				required: true,
 			},
 		],
@@ -52,7 +52,7 @@ export class IgdbSearch implements INodeType {
 	}
 
 	execute(this: IExecuteFunctions, pairedItem: { item: number }): NodeOutput[] {
-		const credentials = this.getCredentials('IGDBCredential') as IGDBCredential[]
+		const credentials = this.getCredentials('IGDBApiCredential') as IGDBApiCredential[]
 		if (!credentials || credentials.length === 0) {
 			throw new NodeOperationError('IGDB credential not found')
 		}
