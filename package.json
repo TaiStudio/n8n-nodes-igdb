@@ -1,6 +1,6 @@
 {
   "name": "@taistudio/n8n-nodes-igdb",
-  "version": "26.9.10",
+  "version": "26.9.11",
   "description": "n8n node for IGDB integration",
   "license": "MIT",
   "homepage": "https://github.com/TaiStudio/n8n-nodes-igdb#readme",
